@@ -1,31 +1,66 @@
-import { StyleSheet } from 'react-native';
+import * as React from "react";
+import * as WebBrowser from "expo-web-browser";
+import { makeRedirectUri, useAuthRequest } from "expo-auth-session";
+import { Button } from "react-native";
+import { GithubAuthProvider, signInWithCredential } from "firebase/auth";
+import { auth } from "@/firebase-config";
+import { createTokenWithCode } from "@/utils/create-token-with-code";
 
-import EditScreenInfo from '@/components/EditScreenInfo';
-import { Text, View } from '@/components/Themed';
+WebBrowser.maybeCompleteAuthSession();
 
-export default function TabOneScreen() {
+// Endpoint
+const discovery = {
+  authorizationEndpoint: "https://github.com/login/oauth/authorize",
+  tokenEndpoint: "https://github.com/login/oauth/access_token",
+  revocationEndpoint: `https://github.com/settings/connections/applications/${process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID}`,
+};
+
+export default function App() {
+  const [request, response, promptAsync] = useAuthRequest(
+    {
+      clientId: "595c98792cfe3ece270e",
+      scopes: ["identity", "user:email", "user:follow"],
+      redirectUri: makeRedirectUri({
+        scheme: "testauth",
+      }),
+    },
+    discovery
+  );
+
+  async function handleResponse() {
+    // Verify that everything went well
+    if (response?.type === "success") {
+      // Here we grab the code from the response
+      const { code } = response.params;
+
+      // And use this code to get the access_token
+      const { token_type, scope, access_token } = await createTokenWithCode(
+        code
+      );
+
+      // Just in case we don't have the token return early
+      if (!access_token) return;
+
+      // GithubAuthProvider is a class that we can import from 'firebase/auth'
+      // We pass the token and it returns a credential
+      const credential = GithubAuthProvider.credential(access_token);
+
+      // Finally we use that credential to register the user in Firebase
+      const data = await signInWithCredential(auth, credential);
+    }
+  }
+
+  React.useEffect(() => {
+    handleResponse();
+  }, [response]);
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Tab One</Text>
-      <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />
-      <EditScreenInfo path="app/(tabs)/index.tsx" />
-    </View>
+    <Button
+      disabled={!request}
+      title="Login"
+      onPress={() => {
+        promptAsync();
+      }}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  separator: {
-    marginVertical: 30,
-    height: 1,
-    width: '80%',
-  },
-});
